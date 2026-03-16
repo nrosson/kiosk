@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import {
-  Delete, ArrowRight, CircleCheck, CircleStop,
+  Delete, ArrowRight, CircleCheck, CircleStop, X,
   Clock, User, Pencil, Square, Play, Sun, Moon, BedDouble,
 } from 'lucide-react'
 
@@ -505,7 +505,10 @@ export default function App() {
 
   const handleDigit = useCallback((d: string) => {
     setError(false)
-    setDigits(prev => prev.length < PIN_LENGTH ? [...prev, d] : prev)
+    setDigits(prev => {
+      if (prev.length >= PIN_LENGTH) return prev
+      return [...prev, d]
+    })
   }, [])
 
   const handleBackspace = useCallback(() => {
@@ -535,13 +538,17 @@ export default function App() {
     }
   }, [digits, employees])
 
+  // Auto-submit when PIN is complete
+  useEffect(() => {
+    if (digits.length === PIN_LENGTH) handleSubmit()
+  }, [digits])
+
   // Physical keyboard / numpad support on PIN screen
   useEffect(() => {
     if (screen !== 'pin' || showScreensaver) return
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key >= '0' && e.key <= '9') { handleDigit(e.key); return }
       if (e.key === 'Backspace' || e.key === 'Delete') { handleBackspace(); return }
-      if (e.key === 'Enter' && digits.length === PIN_LENGTH) { handleSubmit() }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -597,8 +604,6 @@ export default function App() {
       setTimeout(() => setToast(null), 250)
     }, 3000)
   }, [employee])
-
-  const isComplete = digits.length === PIN_LENGTH
 
   // Shared pill button style helper
   const pillBtn = (bg: string, color: string, border?: string): React.CSSProperties => ({
@@ -714,7 +719,7 @@ export default function App() {
               ))}
               <KeypadBtn onClick={handleBackspace} disabled={digits.length === 0} ariaLabel="Delete last digit"><BackspaceIcon /></KeypadBtn>
               <KeypadBtn onClick={() => handleDigit('0')}>0</KeypadBtn>
-              <KeypadBtn onClick={handleSubmit} disabled={!isComplete} variant="submit" ariaLabel="Submit Kiosk ID"><ArrowRightIcon /></KeypadBtn>
+              <KeypadBtn onClick={() => { setError(false); setDigits([]) }} disabled={digits.length === 0} ariaLabel="Clear PIN"><X style={{ width: '100%', height: '100%' }} /></KeypadBtn>
             </div>
 
             <p style={{ fontSize: 13, color: T.textSecondary, opacity: 0.6, textAlign: 'center' }}>
