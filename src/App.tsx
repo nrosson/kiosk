@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import {
-  Delete, ArrowRight, CircleCheck, CircleStop, X,
+  Delete, CircleCheck, CircleStop, X,
   Clock, User, Pencil, Square, Play, Sun, Moon, BedDouble,
 } from 'lucide-react'
 
@@ -119,9 +119,6 @@ function BackspaceIcon() {
   return <Delete style={{ width: '100%', height: '100%' }} />
 }
 
-function ArrowRightIcon() {
-  return <ArrowRight style={{ width: '100%', height: '100%' }} />
-}
 
 function CheckCircleIcon() {
   return (
