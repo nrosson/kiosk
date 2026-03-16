@@ -25,7 +25,6 @@ interface Employee {
 
 type Screen = 'pin' | 'employee' | 'roleSelect' | 'confirm'
 type ConfirmType = 'in' | 'out'
-type RoleSelectMode = 'clockIn' | 'changeRole'
 
 interface Toast {
   role: string
@@ -183,6 +182,25 @@ function MoonIcon() {
 
 // ── Keypad Button ──────────────────────────────────────────────────────────────
 
+function visibleEntries(entries: TimeEntry[], clockInTime: Date | null): TimeEntry[] {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000)
+  return entries.filter(e =>
+    e.clockIn >= cutoff &&
+    (clockInTime === null || e.clockOut <= clockInTime)
+  )
+}
+
+function formatEntryDate(date: Date) {
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  if (sameDay(date, today)) return 'Today'
+  if (sameDay(date, yesterday)) return 'Yesterday'
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 function formatEntryDuration(from: Date, to: Date) {
   const mins = Math.round((to.getTime() - from.getTime()) / 60000)
   const h = Math.floor(mins / 60)
@@ -255,14 +273,19 @@ function RecentActivity({ entries, roles, onEditRole }: {
           <div key={i} style={{ backgroundColor: T.white, borderRadius: 16, overflow: 'hidden', paddingLeft: 12 }}>
             {/* Time range row */}
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 16, height: 48,
-              paddingRight: 12, borderBottom: `1px solid ${T.borderSubdued}`,
+              display: 'flex', alignItems: 'center', gap: 16,
+              padding: '10px 12px 10px 0', borderBottom: `1px solid ${T.borderSubdued}`,
             }}>
               <ClockIcon />
-              <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: T.textSubdued }}>
-                {formatTimeShort(entry.clockIn)} – {formatTimeShort(entry.clockOut)}
-              </span>
-              <span style={{ fontSize: 14, fontWeight: 600, color: T.textSubdued }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <span style={{ fontSize: 12, fontWeight: 500, color: T.textSubdued, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {formatEntryDate(entry.clockIn)}
+                </span>
+                <span style={{ fontSize: 16, fontWeight: 600, color: T.textSubdued }}>
+                  {formatTimeShort(entry.clockIn)} – {formatTimeShort(entry.clockOut)}
+                </span>
+              </div>
+              <span style={{ fontSize: 16, fontWeight: 600, color: T.textSubdued, flexShrink: 0 }}>
                 {formatEntryDuration(entry.clockIn, entry.clockOut)}
               </span>
             </div>
@@ -279,9 +302,9 @@ function RecentActivity({ entries, roles, onEditRole }: {
               }}
             >
               <RoleIcon />
-              <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: T.textPrimary }}>Role</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 14, fontWeight: 500, color: T.textPrimary, textTransform: 'capitalize' }}>
+              <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: T.textPrimary }}>Role</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <span style={{ fontSize: 15, fontWeight: 500, color: T.textPrimary, textTransform: 'capitalize' }}>
                   {entry.role}
                 </span>
                 {roles && roles.length > 1 && <EditIcon />}
@@ -419,7 +442,6 @@ export default function App() {
   const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES)
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [selectedRole, setSelectedRole] = useState<string | null>(null)
-  const [roleSelectMode, setRoleSelectMode] = useState<RoleSelectMode>('clockIn')
   const [confirmType, setConfirmType] = useState<ConfirmType | null>(null)
   const [confirmTime, setConfirmTime] = useState<Date | null>(null)
   const [now, setNow] = useState(new Date())
@@ -429,6 +451,10 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const [showScreensaver, setShowScreensaver] = useState(false)
   const [wakingUp, setWakingUp] = useState(false)
+  const [showRoleModal, setShowRoleModal] = useState(false)
+  const [roleModalPending, setRoleModalPending] = useState<string | null>(null)
+  const roleModalRef = useRef<HTMLDivElement>(null)
+  const roleModalTitleId = useId()
   const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -445,6 +471,24 @@ export default function App() {
   useEffect(() => {
     screenHeadingRef.current?.focus()
   }, [screen])
+
+  useEffect(() => {
+    if (showRoleModal) roleModalRef.current?.focus()
+  }, [showRoleModal])
+
+  const handleRoleModalKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { setShowRoleModal(false); return }
+    if (e.key !== 'Tab') return
+    const focusable = roleModalRef.current?.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    if (!focusable || focusable.length === 0) return
+    const first = focusable[0], last = focusable[focusable.length - 1]
+    if (e.shiftKey ? document.activeElement === first : document.activeElement === last) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus()
+    }
+  }
 
   // Reset screensaver timer on any pin screen activity
   useEffect(() => {
@@ -528,7 +572,6 @@ export default function App() {
     setEmployee(found)
     if (!found.clockedIn && found.roles && found.roles.length > 1) {
       setSelectedRole(found.roles[0])
-      setRoleSelectMode('clockIn')
       setScreen('roleSelect')
     } else {
       setScreen('employee')
@@ -563,20 +606,22 @@ export default function App() {
   }, [employee, selectedRole])
 
   const handleClockOut = useCallback(() => {
-    if (!employee) return
-    const updated = { ...employee, clockedIn: false, clockInTime: null }
+    if (!employee || !employee.clockInTime) return
+    const clockOutTime = new Date()
+    const newEntry: TimeEntry = { clockIn: employee.clockInTime, clockOut: clockOutTime, role: employee.job }
+    const updatedEntries = [...(employee.recentEntries ?? []), newEntry]
+    const updated = { ...employee, clockedIn: false, clockInTime: null, recentEntries: updatedEntries }
     setEmployees(prev => prev.map(e => e.id === employee.id ? updated : e))
     setEmployee(updated)
     setConfirmType('out')
-    setConfirmTime(new Date())
+    setConfirmTime(clockOutTime)
     setScreen('confirm')
   }, [employee])
 
   const handleEditRole = useCallback(() => {
     if (!employee) return
-    setSelectedRole(employee.job)
-    setRoleSelectMode('changeRole')
-    setScreen('roleSelect')
+    setRoleModalPending(employee.job)
+    setShowRoleModal(true)
   }, [employee])
 
   const handleEditEntryRole = useCallback((index: number, role: string) => {
@@ -592,7 +637,7 @@ export default function App() {
     const updated = { ...employee, job: role }
     setEmployees(prev => prev.map(e => e.id === employee.id ? updated : e))
     setEmployee(updated)
-    setScreen('employee')
+    setShowRoleModal(false)
     // Show toast
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
     setToast({ role, clockInTime: employee.clockInTime ?? new Date(), exiting: false })
@@ -733,7 +778,7 @@ export default function App() {
                 {employee.name}
               </h1>
               <p style={{ fontSize: 'var(--body-font)', color: T.textSecondary, textAlign: 'center' }}>
-                {roleSelectMode === 'changeRole' ? 'Select your role for this shift.' : 'Choose your role and clock in to start your shift.'}
+                Choose your role and clock in to start your shift.
               </p>
             </div>
 
@@ -760,38 +805,30 @@ export default function App() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
-              {roleSelectMode === 'changeRole' ? (
-                <button
-                  onClick={() => selectedRole && handleSaveRole(selectedRole)}
-                  disabled={!selectedRole}
-                  style={{ ...pillBtn(T.purple, T.white), opacity: selectedRole ? 1 : 0.5 }}
-                >
-                  Save Role
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleClockIn(selectedRole ?? undefined)}
-                  disabled={!selectedRole}
-                  style={{ ...pillBtn(T.purple, T.white), opacity: selectedRole ? 1 : 0.5 }}
-                >
-                  <PlayIcon /> Clock In
-                </button>
-              )}
+              <button
+                onClick={() => handleClockIn(selectedRole ?? undefined)}
+                disabled={!selectedRole}
+                style={{ ...pillBtn(T.purple, T.white), opacity: selectedRole ? 1 : 0.5 }}
+              >
+                <PlayIcon /> Clock In
+              </button>
             </div>
 
-            {roleSelectMode === 'clockIn' && employee.recentEntries && employee.recentEntries.length > 0 && (
-              <RecentActivity entries={employee.recentEntries} roles={employee.roles} onEditRole={handleEditEntryRole} />
+            {visibleEntries(employee.recentEntries ?? [], employee.clockInTime).length > 0 && (
+              <RecentActivity entries={visibleEntries(employee.recentEntries ?? [], employee.clockInTime)} roles={employee.roles} onEditRole={handleEditEntryRole} />
             )}
           </div>
         )}
 
         {/* ── Employee Screen ── */}
-        {screen === 'employee' && employee && (
-          <div className={employee.recentEntries?.length ? 'employee-split' : 'kiosk-container'}>
+        {screen === 'employee' && employee && (() => {
+          const ve = visibleEntries(employee.recentEntries ?? [], employee.clockInTime)
+          return (
+          <div className={ve.length ? 'employee-split' : 'kiosk-container'}>
 
             {/* Left / main column */}
-            <div className={employee.recentEntries?.length ? 'employee-split-main' : undefined}
-              style={!employee.recentEntries?.length ? { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--screen-gap)', width: '100%' } : undefined}
+            <div className={ve.length ? 'employee-split-main' : undefined}
+              style={!ve.length ? { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--screen-gap)', width: '100%' } : undefined}
             >
               {/* Name + status */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: '100%' }}>
@@ -830,7 +867,7 @@ export default function App() {
                       padding: '14px 12px', borderBottom: `1px solid ${T.borderSubdued}`,
                     }}>
                       <ClockIcon />
-                      <span style={{ fontSize: 14, fontWeight: 600, color: T.textSubdued }}>
+                      <span style={{ fontSize: 16, fontWeight: 600, color: T.textSubdued }}>
                         Clocked in @ {employee.clockInTime ? formatTimeShort(employee.clockInTime) : ''}
                       </span>
                     </div>
@@ -844,9 +881,9 @@ export default function App() {
                         }}
                       >
                         <RoleIcon />
-                        <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: T.textPrimary }}>Role</span>
+                        <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: T.textPrimary }}>Role</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 14, fontWeight: 500, color: T.textPrimary, textTransform: 'capitalize' }}>
+                          <span style={{ fontSize: 15, fontWeight: 500, color: T.textPrimary, textTransform: 'capitalize' }}>
                             {employee.job}
                           </span>
                           <EditIcon />
@@ -879,14 +916,15 @@ export default function App() {
             </div>
 
             {/* Right column — recent activity */}
-            {employee.recentEntries && employee.recentEntries.length > 0 && (
+            {visibleEntries(employee.recentEntries ?? [], employee.clockInTime).length > 0 && (
               <div className="employee-split-activity">
-                <RecentActivity entries={employee.recentEntries} roles={employee.roles} onEditRole={handleEditEntryRole} />
+                <RecentActivity entries={visibleEntries(employee.recentEntries ?? [], employee.clockInTime)} roles={employee.roles} onEditRole={handleEditEntryRole} />
               </div>
             )}
 
           </div>
-        )}
+          )
+        })()}
 
         {/* ── Confirmation ── */}
         {screen === 'confirm' && employee && (
@@ -895,7 +933,7 @@ export default function App() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <p style={{ fontSize: 'var(--body-font)', color: T.textSecondary }}>{employee.name}</p>
               <h1 ref={screenHeadingRef} tabIndex={-1} style={{ fontSize: 'var(--confirm-font)', fontWeight: 700, color: T.textPrimary, lineHeight: 1.1, outline: 'none' }}>
-                {confirmType === 'in' ? 'Clocked In' : 'Clocked Out'} as {employee.job}!
+                {confirmType === 'in' ? 'Clocked In' : 'Clocked Out'}{employee.roles && employee.roles.length > 1 ? ` as ${employee.job}` : ''}!
               </h1>
               <p style={{ fontSize: 18, color: T.textSecondary }}>{confirmTime ? formatTime(confirmTime) : ''}</p>
             </div>
@@ -918,14 +956,10 @@ export default function App() {
         }}>
           <div style={{ width: '100%', maxWidth: 'var(--container-w)' }}>
             <button
-              onClick={
-                screen === 'roleSelect' && roleSelectMode === 'changeRole'
-                  ? () => setScreen('employee')
-                  : resetToPin
-              }
+              onClick={resetToPin}
               style={pillBtn(T.white, T.textPrimary, `1px solid ${T.border}`)}
             >
-              {screen === 'roleSelect' && roleSelectMode === 'changeRole' ? 'Cancel' : 'Return to PIN screen'}
+              Return to PIN screen
             </button>
           </div>
           <div style={{ width: '100%', maxWidth: 'var(--container-w)', display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center' }}>
@@ -963,7 +997,7 @@ export default function App() {
         <div
           className={toast.exiting ? 'toast-exit' : 'toast-enter'}
           style={{
-            position: 'fixed', bottom: 32, left: '50%',
+            position: 'fixed', top: 72, left: '50%',
             zIndex: 100, pointerEvents: 'none',
           }}
         >
@@ -989,6 +1023,88 @@ export default function App() {
               <span style={{ fontSize: 16, fontWeight: 500, color: T.textSubdued, letterSpacing: '0.01em' }}>
                 Shift started at {formatTimeShort(toast.clockInTime)}
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Role Edit Modal ── */}
+      {showRoleModal && employee?.roles && (
+        <div
+          onPointerDown={() => setShowRoleModal(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 400,
+            backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <div
+            ref={roleModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={roleModalTitleId}
+            tabIndex={-1}
+            onPointerDown={e => e.stopPropagation()}
+            onKeyDown={handleRoleModalKeyDown}
+            style={{
+              backgroundColor: T.bg, borderRadius: 20, padding: 24,
+              width: '100%', maxWidth: 400,
+              boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
+              display: 'flex', flexDirection: 'column', gap: 16,
+              outline: 'none',
+            }}
+          >
+            <p id={roleModalTitleId} style={{ fontSize: 18, fontWeight: 700, color: T.textPrimary }}>Edit Role</p>
+
+            <div style={{ backgroundColor: T.white, borderRadius: 14, overflow: 'hidden' }}>
+              {employee.roles.map(role => {
+                const isSelected = roleModalPending === role
+                return (
+                  <button
+                    key={role}
+                    onClick={() => setRoleModalPending(role)}
+                    aria-pressed={isSelected}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 16,
+                      padding: '16px 16px',
+                      border: 'none', borderBottom: `1px solid ${T.borderSubdued}`,
+                      backgroundColor: isSelected ? 'var(--t-selected-bg)' : 'transparent',
+                      cursor: 'pointer', textAlign: 'left',
+                    }}
+                  >
+                    <span style={{ flex: 1, fontSize: 16, fontWeight: 500, color: T.textPrimary }}>
+                      {role}
+                    </span>
+                    {isSelected && <CircleCheck size={18} color={T.purple} strokeWidth={2.5} aria-hidden="true" />}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button
+                onClick={() => setShowRoleModal(false)}
+                style={{
+                  flex: 1, padding: '14px 0', borderRadius: 9999,
+                  border: `1px solid ${T.border}`, backgroundColor: T.white,
+                  fontSize: 16, fontWeight: 600, color: T.textPrimary, cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => roleModalPending && handleSaveRole(roleModalPending)}
+                disabled={!roleModalPending}
+                style={{
+                  flex: 1, padding: '14px 0', borderRadius: 9999,
+                  border: 'none', backgroundColor: T.purple,
+                  fontSize: 16, fontWeight: 600, color: '#ffffff', cursor: 'pointer',
+                  opacity: roleModalPending ? 1 : 0.5,
+                }}
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>
