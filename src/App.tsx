@@ -530,6 +530,18 @@ export default function App() {
     }
   }, [digits, employees])
 
+  // Physical keyboard / numpad support on PIN screen
+  useEffect(() => {
+    if (screen !== 'pin' || showScreensaver) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key >= '0' && e.key <= '9') { handleDigit(e.key); return }
+      if (e.key === 'Backspace' || e.key === 'Delete') { handleBackspace(); return }
+      if (e.key === 'Enter' && digits.length === PIN_LENGTH) { handleSubmit() }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [screen, showScreensaver, digits, handleDigit, handleBackspace, handleSubmit])
+
   const handleClockIn = useCallback((role?: string) => {
     if (!employee) return
     const jobForShift = role ?? selectedRole ?? employee.job
