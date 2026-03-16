@@ -418,6 +418,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('pin')
   const [digits, setDigits] = useState<string[]>([])
   const [error, setError] = useState(false)
+  const [shaking, setShaking] = useState(false)
   const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES)
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [selectedRole, setSelectedRole] = useState<string | null>(null)
@@ -517,7 +518,11 @@ export default function App() {
     const found = employees.find(e => e.kioskId === pin)
     if (!found) {
       setError(true)
-      setDigits([])
+      setShaking(true)
+      setTimeout(() => {
+        setShaking(false)
+        setDigits([])
+      }, 400)
       return
     }
     setEmployee(found)
@@ -686,7 +691,7 @@ export default function App() {
                     ? 'Kiosk ID entry. No digits entered.'
                     : `${digits.length} of ${PIN_LENGTH} digits entered.`}
               </div>
-              <div className="pin-row" aria-hidden="true">
+              <div className={`pin-row${shaking ? ' pin-shake' : ''}`} aria-hidden="true">
                 {Array.from({ length: PIN_LENGTH }).map((_, i) => (
                   <div key={i} className="pin-box" style={{
                     border: `2px solid ${error ? T.error : i < digits.length ? T.purple : T.border}`,
