@@ -112,9 +112,6 @@ function formatElapsed(from: Date, to: Date) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-function getInitials(name: string) {
-  return name.split(' ').map(n => n[0]).join('').toUpperCase()
-}
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
