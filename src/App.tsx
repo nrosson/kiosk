@@ -423,6 +423,7 @@ export default function App() {
   const [selectedRole, setSelectedRole] = useState<string | null>(null)
   const [roleSelectMode, setRoleSelectMode] = useState<RoleSelectMode>('clockIn')
   const [confirmType, setConfirmType] = useState<ConfirmType | null>(null)
+  const [confirmTime, setConfirmTime] = useState<Date | null>(null)
   const [now, setNow] = useState(new Date())
   const [timeoutRemaining, setTimeoutRemaining] = useState(TIMEOUT_SECONDS)
   const [confirmCountdown, setConfirmCountdown] = useState(CONFIRM_SECONDS)
@@ -536,6 +537,7 @@ export default function App() {
     setEmployees(prev => prev.map(e => e.id === employee.id ? updated : e))
     setEmployee(updated)
     setConfirmType('in')
+    setConfirmTime(new Date())
     setScreen('confirm')
   }, [employee, selectedRole])
 
@@ -545,6 +547,7 @@ export default function App() {
     setEmployees(prev => prev.map(e => e.id === employee.id ? updated : e))
     setEmployee(updated)
     setConfirmType('out')
+    setConfirmTime(new Date())
     setScreen('confirm')
   }, [employee])
 
@@ -875,7 +878,7 @@ export default function App() {
               <h1 ref={screenHeadingRef} tabIndex={-1} style={{ fontSize: 'var(--confirm-font)', fontWeight: 700, color: T.textPrimary, lineHeight: 1.1, outline: 'none' }}>
                 {confirmType === 'in' ? 'Clocked In' : 'Clocked Out'} as {employee.job}!
               </h1>
-              <p style={{ fontSize: 18, color: T.textSecondary }}>{formatTime(now)}</p>
+              <p style={{ fontSize: 18, color: T.textSecondary }}>{confirmTime ? formatTime(confirmTime) : ''}</p>
             </div>
             <p aria-live="polite" aria-atomic="true" style={{ fontSize: 14, color: T.textSecondary, opacity: 0.7 }}>
               Returning in {confirmCountdown}s…
