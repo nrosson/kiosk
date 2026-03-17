@@ -23,9 +23,10 @@ interface Employee {
   clockInTime: Date | null
   recentEntries?: TimeEntry[]
   photo?: string
+  totpSecret?: string
 }
 
-type Screen = 'pin' | 'employee' | 'roleSelect' | 'confirm' | 'manager'
+type Screen = 'pin' | 'employee' | 'roleSelect' | 'confirm' | 'manager' | 'closed' | 'mfa'
 type ConfirmType = 'in' | 'out'
 type ManagerTab = 'myTime' | 'employees' | 'kiosk'
 
@@ -64,6 +65,7 @@ const INITIAL_EMPLOYEES: Employee[] = [
     roles: ['Manager', 'Barista', 'Server', 'Chef'],
     isManager: true, clockedIn: false, clockInTime: null, recentEntries: [],
     photo: 'https://randomuser.me/api/portraits/women/68.jpg',
+    totpSecret: 'JBSWY3DPEHPK3PXP',
   },
 ]
 
@@ -659,6 +661,43 @@ function KeypadBtn({
   )
 }
 
+// ── TOTP helpers ───────────────────────────────────────────────────────────────
+
+function base32Decode(base32: string): Uint8Array {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = 0, value = 0
+  const bytes: number[] = []
+  for (const char of base32.toUpperCase().replace(/=+$/, '').replace(/\s/g, '')) {
+    const idx = alphabet.indexOf(char)
+    if (idx === -1) continue
+    value = (value << 5) | idx
+    bits += 5
+    if (bits >= 8) { bytes.push((value >>> (bits - 8)) & 0xff); bits -= 8 }
+  }
+  return new Uint8Array(bytes)
+}
+
+async function computeTOTP(secret: string, now = Date.now()): Promise<string> {
+  const keyBytes = base32Decode(secret).buffer as ArrayBuffer
+  const counter = Math.floor(now / 1000 / 30)
+  const buf = new ArrayBuffer(8)
+  const view = new DataView(buf)
+  view.setUint32(0, 0, false)
+  view.setUint32(4, counter, false)
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', keyBytes, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign'],
+  )
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, buf))
+  const offset = sig[sig.length - 1] & 0x0f
+  const code = (
+    ((sig[offset]     & 0x7f) << 24) |
+    ((sig[offset + 1] & 0xff) << 16) |
+    ((sig[offset + 2] & 0xff) << 8)  |
+     (sig[offset + 3] & 0xff)
+  ) % 1_000_000
+  return String(code).padStart(6, '0')
+}
+
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -684,6 +723,17 @@ export default function App() {
   const roleModalTitleId = useId()
   const [kioskOpen, setKioskOpen] = useState(true)
   const [managerTab, setManagerTab] = useState<ManagerTab>('myTime')
+  const [closedPinActive, setClosedPinActive] = useState(false)
+  const [closedDigits, setClosedDigits] = useState<string[]>([])
+  const [closedError, setClosedError] = useState<string | null>(null)
+  const [closedShaking, setClosedShaking] = useState(false)
+  const [mfaEmployee, setMfaEmployee] = useState<Employee | null>(null)
+  const [mfaFromClosed, setMfaFromClosed] = useState(false)
+  const [mfaDigits, setMfaDigits] = useState<string[]>([])
+  const [mfaError, setMfaError] = useState<string | null>(null)
+  const [mfaShaking, setMfaShaking] = useState(false)
+  const [currentTotp, setCurrentTotp] = useState('')
+  const [totpSecondsLeft, setTotpSecondsLeft] = useState(30)
   const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -695,6 +745,7 @@ export default function App() {
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const screensaverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const screenHeadingRef = useRef<HTMLHeadingElement>(null)
+  const [lastActivityTs, setLastActivityTs] = useState(0)
 
   // Move focus to screen heading on screen changes
   useEffect(() => {
@@ -719,6 +770,31 @@ export default function App() {
     }
   }
 
+  // Keep TOTP code fresh while MFA screen is visible
+  useEffect(() => {
+    if (screen !== 'mfa' || !mfaEmployee?.totpSecret) return
+    const refresh = async () => {
+      const code = await computeTOTP(mfaEmployee!.totpSecret!)
+      setCurrentTotp(code)
+      setTotpSecondsLeft(30 - (Math.floor(Date.now() / 1000) % 30))
+    }
+    refresh()
+    const id = setInterval(refresh, 1000)
+    return () => clearInterval(id)
+  }, [screen, mfaEmployee])
+
+  // Track user activity on manager screen to reset screensaver timer
+  useEffect(() => {
+    if (screen !== 'manager') return
+    const bump = () => setLastActivityTs(Date.now())
+    document.addEventListener('pointerdown', bump)
+    document.addEventListener('keydown', bump)
+    return () => {
+      document.removeEventListener('pointerdown', bump)
+      document.removeEventListener('keydown', bump)
+    }
+  }, [screen])
+
   // Reset screensaver timer on any pin/manager screen activity
   useEffect(() => {
     if (screen !== 'pin' && screen !== 'manager') {
@@ -729,7 +805,7 @@ export default function App() {
     if (screensaverTimerRef.current) clearTimeout(screensaverTimerRef.current)
     screensaverTimerRef.current = setTimeout(() => setShowScreensaver(true), 30_000)
     return () => { if (screensaverTimerRef.current) clearTimeout(screensaverTimerRef.current) }
-  }, [screen, digits, errorMsg])
+  }, [screen, digits, errorMsg, lastActivityTs])
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000)
@@ -809,7 +885,16 @@ export default function App() {
     }
     setEmployee(found)
     if (found.isManager) {
-      setScreen('manager')
+      if (found.totpSecret) {
+        setMfaEmployee(found)
+        setMfaFromClosed(false)
+        setMfaDigits([])
+        setMfaError(null)
+        setScreen('mfa')
+      } else {
+        setManagerTab('myTime')
+        setScreen('manager')
+      }
       return
     }
     if (!found.clockedIn && found.roles && found.roles.length > 1) {
@@ -835,6 +920,7 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [screen, showScreensaver, digits, handleDigit, handleBackspace, handleSubmit])
+
 
   const handleClockIn = useCallback((role?: string) => {
     if (!employee) return
@@ -904,6 +990,99 @@ export default function App() {
       return { ...e, recentEntries: e.recentEntries.map((en, i) => i === index ? updated : en) }
     }))
   }, [])
+
+  const handleClosedDigit = useCallback((d: string) => {
+    if (closedDigits.length >= 4) return
+    setClosedError(null)
+    const next = [...closedDigits, d]
+    setClosedDigits(next)
+    if (next.length === 4) {
+      const pin = next.join('')
+      const found = employees.find(e => e.kioskId === pin)
+      if (!found?.isManager) {
+        setClosedError('Manager PIN required.')
+        setClosedShaking(true)
+        setTimeout(() => { setClosedShaking(false); setClosedDigits([]) }, 400)
+      } else {
+        if (found.totpSecret) {
+          setMfaEmployee(found)
+          setMfaFromClosed(true)
+          setMfaDigits([])
+          setMfaError(null)
+          setScreen('mfa')
+        } else {
+          setKioskOpen(true)
+          setEmployee(found)
+          setManagerTab('myTime')
+          setScreen('manager')
+          setClosedPinActive(false)
+          setClosedDigits([])
+          setClosedError(null)
+        }
+      }
+    }
+  }, [closedDigits, employees])
+
+  const handleClosedBackspace = useCallback(() => {
+    setClosedError(null)
+    setClosedDigits(prev => prev.slice(0, -1))
+  }, [])
+
+  const dismissMfa = useCallback(() => {
+    setMfaEmployee(null)
+    setMfaDigits([])
+    setMfaError(null)
+    if (mfaFromClosed) {
+      setClosedPinActive(false)
+      setClosedDigits([])
+      setClosedError(null)
+      setScreen('closed')
+    } else {
+      setDigits([])
+      setErrorMsg(null)
+      setScreen('pin')
+    }
+  }, [mfaFromClosed])
+
+  const handleMfaDigit = useCallback((d: string) => {
+    if (mfaDigits.length >= 6) return
+    setMfaError(null)
+    const next = [...mfaDigits, d]
+    setMfaDigits(next)
+    if (next.length === 6) {
+      if (next.join('') !== currentTotp) {
+        setMfaError('Incorrect code. Please try again.')
+        setMfaShaking(true)
+        setTimeout(() => { setMfaShaking(false); setMfaDigits([]) }, 400)
+      } else {
+        if (mfaFromClosed) setKioskOpen(true)
+        setEmployee(mfaEmployee)
+        setManagerTab('myTime')
+        setScreen('manager')
+        setMfaEmployee(null)
+        setMfaDigits([])
+        setClosedPinActive(false)
+        setClosedDigits([])
+      }
+    }
+  }, [mfaDigits, currentTotp, mfaEmployee, mfaFromClosed])
+
+  const handleMfaBackspace = useCallback(() => {
+    setMfaError(null)
+    setMfaDigits(prev => prev.slice(0, -1))
+  }, [])
+
+  // Physical keyboard / numpad support on MFA screen
+  useEffect(() => {
+    if (screen !== 'mfa') return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key >= '0' && e.key <= '9') { handleMfaDigit(e.key); return }
+      if (e.key === 'Backspace' || e.key === 'Delete') { handleMfaBackspace(); return }
+      if (e.key === 'Escape') { dismissMfa(); return }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [screen, mfaDigits, handleMfaDigit, handleMfaBackspace, dismissMfa])
 
   // Shared pill button style helper
   const pillBtn = (bg: string, color: string, border?: string): React.CSSProperties => ({
@@ -1024,6 +1203,94 @@ export default function App() {
             <p style={{ fontSize: 13, color: T.textSecondary, opacity: 0.6, textAlign: 'center' }}>
               Demo Kiosk IDs: 1234 · 5678 · 9012 · 0000 (manager)
             </p>
+          </div>
+        )}
+
+        {/* ── MFA Screen ── */}
+        {screen === 'mfa' && mfaEmployee && (
+          <div className="kiosk-container">
+            {/* Heading */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              <Avatar name={mfaEmployee.name} photo={mfaEmployee.photo} size={72} />
+              <h1
+                ref={screenHeadingRef}
+                tabIndex={-1}
+                style={{ fontSize: 'var(--greeting-font)', fontWeight: 700, color: T.textPrimary, textAlign: 'center', lineHeight: 1.1, outline: 'none' }}
+              >
+                Two-Factor Authentication
+              </h1>
+              <p style={{ fontSize: 'var(--body-font)', color: T.textSecondary, textAlign: 'center', lineHeight: 1.4 }}>
+                Enter the 6-digit code from your authenticator app
+              </p>
+            </div>
+
+            {/* 6-digit PIN boxes */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <div className={mfaShaking ? 'pin-shake' : undefined} style={{ display: 'flex', gap: 'clamp(8px, 1.5vw, 16px)' }}>
+                {Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} style={{
+                    width: 'clamp(42px, calc((var(--container-w) - 5 * clamp(8px, 1.5vw, 16px)) / 6), var(--pin-size))',
+                    height: 'var(--pin-size)',
+                    borderRadius: 'var(--pin-radius)',
+                    border: `2px solid ${mfaError ? T.error : mfaDigits.length === i ? T.purple : mfaDigits.length > i ? T.border : T.border}`,
+                    backgroundColor: T.white, boxShadow: T.shadow,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'border-color 0.15s', flexShrink: 0,
+                  }}>
+                    {mfaDigits.length > i && <div className="pin-dot" style={{ backgroundColor: T.textPrimary }} />}
+                  </div>
+                ))}
+              </div>
+              {mfaError && (
+                <p role="alert" style={{ fontSize: 14, color: T.error, fontWeight: 500 }}>{mfaError}</p>
+              )}
+            </div>
+
+            {/* Keypad */}
+            <div className="keypad-grid" role="group" aria-label="Authentication code keypad">
+              {['1','2','3','4','5','6','7','8','9'].map(d => (
+                <KeypadBtn key={d} onClick={() => handleMfaDigit(d)}>{d}</KeypadBtn>
+              ))}
+              <KeypadBtn onClick={handleMfaBackspace} disabled={mfaDigits.length === 0} ariaLabel="Delete last digit"><BackspaceIcon /></KeypadBtn>
+              <KeypadBtn onClick={() => handleMfaDigit('0')}>0</KeypadBtn>
+              <KeypadBtn onClick={() => { setMfaError(null); setMfaDigits([]) }} disabled={mfaDigits.length === 0} ariaLabel="Clear code"><X style={{ width: '100%', height: '100%' }} /></KeypadBtn>
+            </div>
+
+            {/* Demo authenticator hint */}
+            <div style={{ width: 'var(--panel-w)', borderRadius: 16, overflow: 'hidden', border: `1px solid ${T.border}`, backgroundColor: T.white, boxShadow: T.shadow }}>
+              <div style={{ padding: '8px 16px', backgroundColor: T.borderSubdued, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 16, height: 16, borderRadius: 4, background: 'linear-gradient(145deg, #6b1fc2, #a244f5)', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: T.textSubdued, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Demo — Authenticator App</span>
+              </div>
+              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <p style={{ fontSize: 12, color: T.textSubdued, marginBottom: 4 }}>{mfaEmployee.name} · Kiosk</p>
+                  <p style={{ fontSize: 28, fontWeight: 700, letterSpacing: '0.14em', color: T.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+                    {currentTotp.slice(0, 3)} {currentTotp.slice(3)}
+                  </p>
+                </div>
+                <svg width="40" height="40" viewBox="0 0 40 40" style={{ flexShrink: 0 }}>
+                  <circle cx="20" cy="20" r="16" fill="none" stroke={T.borderSubdued} strokeWidth="3" />
+                  <circle cx="20" cy="20" r="16" fill="none" stroke={T.purple} strokeWidth="3"
+                    strokeDasharray={`${2 * Math.PI * 16}`}
+                    strokeDashoffset={`${2 * Math.PI * 16 * (1 - totpSecondsLeft / 30)}`}
+                    strokeLinecap="round"
+                    transform="rotate(-90 20 20)"
+                    style={{ transition: 'stroke-dashoffset 0.9s linear' }}
+                  />
+                  <text x="20" y="25" textAnchor="middle" fontSize="13" fontWeight="600" fill={T.textPrimary} fontFamily="Inter, sans-serif">
+                    {totpSecondsLeft}
+                  </text>
+                </svg>
+              </div>
+            </div>
+
+            <button onClick={dismissMfa} style={{
+              fontSize: 14, color: T.textSubdued, background: 'none', border: 'none',
+              cursor: 'pointer', padding: '4px 0', fontFamily: 'Inter, sans-serif',
+            }}>
+              Cancel
+            </button>
           </div>
         )}
 
@@ -1312,7 +1579,18 @@ export default function App() {
                   </div>
                 </div>
                 <button
-                  onClick={() => { if (kioskOpen) { setKioskOpen(false); resetToPin() } else { setKioskOpen(true) } }}
+                  onClick={() => {
+                    if (kioskOpen) {
+                      setKioskOpen(false)
+                      setEmployee(null)
+                      setDigits([])
+                      setErrorMsg(null)
+                      setScreen('closed')
+                      window.close()
+                    } else {
+                      setKioskOpen(true)
+                    }
+                  }}
                   style={pillBtn(kioskOpen ? T.orange : T.green, T.white)}
                 >
                   {kioskOpen ? 'Close Kiosk' : 'Open Kiosk'}
@@ -1519,6 +1797,127 @@ export default function App() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Closed / Home Screen ── */}
+      {screen === 'closed' && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 400,
+          backgroundColor: '#0e0c0a',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden',
+        }}>
+          {/* Status bar */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0,
+            padding: '28px 36px 0',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            pointerEvents: 'none', userSelect: 'none',
+          }}>
+            <span style={{ fontSize: 15, fontWeight: 500, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.01em' }}>{COMPANY_NAME}</span>
+            <span style={{ fontSize: 15, fontWeight: 500, color: 'rgba(255,255,255,0.45)', fontVariantNumeric: 'tabular-nums' }}>{formatTime(now)}</span>
+          </div>
+
+          {!closedPinActive ? (
+            /* ── Home screen ── */
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 56 }}>
+              {/* Lock-screen clock */}
+              <div style={{ textAlign: 'center', userSelect: 'none', pointerEvents: 'none' }}>
+                <div style={{
+                  fontSize: 'clamp(52px, 14vw, 96px)', fontWeight: 700, lineHeight: 1,
+                  color: 'rgba(255,255,255,0.92)', letterSpacing: '-0.03em',
+                  fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                }}>
+                  {now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 'clamp(16px, 2.5vw, 20px)', fontWeight: 400, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.03em' }}>
+                  {formatDate(now)}
+                </div>
+              </div>
+
+              {/* App icon */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                <button
+                  onClick={() => setClosedPinActive(true)}
+                  style={{
+                    width: 84, height: 84, borderRadius: 22,
+                    background: 'linear-gradient(145deg, #6b1fc2, #a244f5)',
+                    border: 'none', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 8px 28px rgba(162,68,245,0.45)',
+                  }}
+                  aria-label="Open Kiosk app"
+                >
+                  <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.95)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                </button>
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.02em' }}>Kiosk</span>
+              </div>
+            </div>
+          ) : (
+            /* ── Manager PIN entry ── */
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28 }}>
+              {/* Heading */}
+              <div style={{ textAlign: 'center', userSelect: 'none' }}>
+                <h2 style={{ fontSize: 22, fontWeight: 700, color: 'rgba(255,255,255,0.92)', letterSpacing: '-0.01em', margin: 0 }}>Manager Login</h2>
+                <p style={{ marginTop: 6, fontSize: 15, color: 'rgba(255,255,255,0.4)' }}>Enter your Kiosk ID to reactivate</p>
+              </div>
+
+              {/* PIN boxes */}
+              <div className={closedShaking ? 'pin-shake' : undefined} style={{ display: 'flex', gap: 'var(--pin-gap)' }}>
+                {[0,1,2,3].map(i => (
+                  <div key={i} style={{
+                    width: 'var(--pin-size)', height: 'var(--pin-size)',
+                    borderRadius: 'var(--pin-radius)',
+                    border: `2px solid ${closedDigits.length === i ? 'rgba(162,68,245,0.85)' : closedDigits.length > i ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)'}`,
+                    backgroundColor: 'rgba(255,255,255,0.05)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'border-color 0.15s',
+                  }}>
+                    {closedDigits.length > i && (
+                      <div style={{ width: 'var(--pin-dot)', height: 'var(--pin-dot)', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.8)' }} />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {closedError && (
+                <p style={{ fontSize: 14, color: '#f87171', textAlign: 'center', marginTop: -12 }}>{closedError}</p>
+              )}
+
+              {/* Keypad */}
+              <div className="keypad-grid" role="group" aria-label="Manager PIN keypad">
+                {['1','2','3','4','5','6','7','8','9'].map(d => (
+                  <button key={d} className="keypad-btn" onClick={() => handleClosedDigit(d)}
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.88)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}>{d}</span>
+                  </button>
+                ))}
+                <button className="keypad-btn" onClick={handleClosedBackspace} disabled={closedDigits.length === 0}
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.88)', opacity: closedDigits.length === 0 ? 0.3 : 1 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}><BackspaceIcon /></span>
+                </button>
+                <button className="keypad-btn" onClick={() => handleClosedDigit('0')}
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.88)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}>0</span>
+                </button>
+                <button className="keypad-btn" onClick={() => { setClosedError(null); setClosedDigits([]) }} disabled={closedDigits.length === 0}
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.88)', opacity: closedDigits.length === 0 ? 0.3 : 1 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}><X /></span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => { setClosedPinActive(false); setClosedDigits([]); setClosedError(null) }}
+                style={{ fontSize: 14, color: 'rgba(255,255,255,0.35)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', fontFamily: 'Inter, sans-serif' }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       )}
 
