@@ -497,7 +497,7 @@ function RecentActivity({ entries, roles, onEditRole }: {
       <p style={{ fontSize: 20, fontWeight: 600, color: T.textPrimary, lineHeight: 1 }}>
         Recent Activity
       </p>
-      <div style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 2 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 2 }}>
         {entries.map((entry, i) => (
           <div key={i} style={{ backgroundColor: T.white, borderRadius: 16, overflow: 'hidden', paddingLeft: 12 }}>
             {/* Time range row */}
@@ -1611,6 +1611,7 @@ export default function App() {
               </h1>
               <p style={{ fontSize: 18, color: T.textSecondary }}>{confirmTime ? formatTime(confirmTime) : ''}</p>
             </div>
+
             <p aria-live="polite" aria-atomic="true" style={{ fontSize: 14, color: T.textSecondary, opacity: 0.7 }}>
               Returning in {confirmCountdown}s…
             </p>
@@ -1800,126 +1801,217 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Closed / Home Screen ── */}
-      {screen === 'closed' && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 400,
-          backgroundColor: '#0e0c0a',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          overflow: 'hidden',
-        }}>
-          {/* Status bar */}
-          <div style={{
-            position: 'absolute', top: 0, left: 0, right: 0,
-            padding: '28px 36px 0',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            pointerEvents: 'none', userSelect: 'none',
-          }}>
-            <span style={{ fontSize: 15, fontWeight: 500, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.01em' }}>{COMPANY_NAME}</span>
-            <span style={{ fontSize: 15, fontWeight: 500, color: 'rgba(255,255,255,0.45)', fontVariantNumeric: 'tabular-nums' }}>{formatTime(now)}</span>
+      {/* ── Closed / iPad Home Screen ── */}
+      {screen === 'closed' && (() => {
+        const ico = 'clamp(52px, 8vw, 68px)'
+        const icoRadius = 'calc(clamp(52px, 8vw, 68px) * 0.225)'
+        const icoLabel: React.CSSProperties = { fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.88)', letterSpacing: '0.01em', textAlign: 'center', marginTop: 5, textShadow: '0 1px 2px rgba(0,0,0,0.6)' }
+        const dkIco = 'clamp(44px, 7vw, 58px)'
+        const dkRadius = 'calc(clamp(44px, 7vw, 58px) * 0.225)'
+
+        const AppIcon = ({ bg, children, label, onClick, glow }: { bg: string; children: React.ReactNode; label: string; onClick?: () => void; glow?: string }) => (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <button onClick={onClick} style={{
+              width: ico, height: ico, borderRadius: icoRadius,
+              background: bg, border: 'none', cursor: onClick ? 'pointer' : 'default',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              boxShadow: glow ? `0 6px 20px ${glow}` : '0 2px 8px rgba(0,0,0,0.35)',
+            }}>
+              {children}
+            </button>
+            <span style={icoLabel}>{label}</span>
           </div>
+        )
 
-          {!closedPinActive ? (
-            /* ── Home screen ── */
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 56 }}>
-              {/* Lock-screen clock */}
-              <div style={{ textAlign: 'center', userSelect: 'none', pointerEvents: 'none' }}>
-                <div style={{
-                  fontSize: 'clamp(52px, 14vw, 96px)', fontWeight: 700, lineHeight: 1,
-                  color: 'rgba(255,255,255,0.92)', letterSpacing: '-0.03em',
-                  fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
-                }}>
-                  {now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                </div>
-                <div style={{ marginTop: 8, fontSize: 'clamp(16px, 2.5vw, 20px)', fontWeight: 400, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.03em' }}>
-                  {formatDate(now)}
-                </div>
+        const DockIcon = ({ bg, children }: { bg: string; children: React.ReactNode }) => (
+          <button style={{
+            width: dkIco, height: dkIco, borderRadius: dkRadius,
+            background: bg, border: 'none', cursor: 'default',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+          }}>
+            {children}
+          </button>
+        )
+
+        const s = (w = 26, h = 26) => ({ width: w, height: h } as React.SVGProps<SVGSVGElement>)
+
+        return (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 400, overflow: 'hidden',
+            background: 'linear-gradient(160deg, #0d1547 0%, #1e1b6b 18%, #3730a3 38%, #1d4ed8 58%, #0c4a6e 80%, #042f2e 100%)',
+            display: 'flex', flexDirection: 'column',
+            fontFamily: 'Inter, -apple-system, sans-serif',
+          }}>
+
+            {/* ── Status bar ── */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 28px 0', userSelect: 'none', pointerEvents: 'none' }}>
+              <span style={{ fontSize: 15, fontWeight: 600, color: 'white', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
+                {now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                {/* WiFi */}
+                <svg {...s(16, 12)} viewBox="0 0 16 12" fill="none">
+                  <circle cx="8" cy="11" r="1.4" fill="white"/>
+                  <path d="M4 7.5C5.3 6.2 6.6 5.5 8 5.5s2.7.7 4 2" stroke="white" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+                  <path d="M1 4.5C3.2 2.3 5.5 1 8 1s4.8 1.3 7 3.5" stroke="white" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+                </svg>
+                {/* Battery */}
+                <svg {...s(26, 13)} viewBox="0 0 26 13" fill="none">
+                  <rect x="0.6" y="0.6" width="21.8" height="11.8" rx="2.5" stroke="white" strokeWidth="1.2"/>
+                  <rect x="22.8" y="3.8" width="2.6" height="5.4" rx="1.2" fill="white" opacity="0.6"/>
+                  <rect x="2" y="2" width="16" height="9" rx="1.5" fill="white"/>
+                </svg>
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'white' }}>100%</span>
               </div>
+            </div>
 
-              {/* App icon */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                <button
-                  onClick={() => setClosedPinActive(true)}
-                  style={{
-                    width: 84, height: 84, borderRadius: 22,
-                    background: 'linear-gradient(145deg, #6b1fc2, #a244f5)',
-                    border: 'none', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: '0 8px 28px rgba(162,68,245,0.45)',
-                  }}
-                  aria-label="Open Kiosk app"
-                >
-                  <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.95)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/>
-                    <polyline points="12 6 12 12 16 14"/>
+            {/* ── Date / time ── */}
+            <div style={{ textAlign: 'center', paddingTop: 18, paddingBottom: 10, userSelect: 'none', pointerEvents: 'none' }}>
+              <div style={{ fontSize: 'clamp(13px, 2vw, 16px)', fontWeight: 400, color: 'rgba(255,255,255,0.6)', letterSpacing: '0.03em' }}>
+                {now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              </div>
+            </div>
+
+            {/* ── App grid ── */}
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 clamp(20px, 5vw, 60px)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'clamp(16px, 3vw, 28px) clamp(12px, 2.5vw, 24px)', justifyItems: 'center' }}>
+
+                {/* Row 1 */}
+                <AppIcon label="Safari" bg="linear-gradient(145deg, #006cdc, #0084ff)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="white" strokeWidth="1.4"/><path d="M16.2 7.8l-3.5 5.3-5.3 3.1 3.6-5.2 5.2-3.2z" fill="white"/><circle cx="12" cy="12" r="1.2" fill="#0076d6"/></svg>
+                </AppIcon>
+                <AppIcon label="Mail" bg="linear-gradient(145deg, #1a7af8, #0f66e0)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2" stroke="white" strokeWidth="1.4"/><path d="M3 8l9 6 9-6" stroke="white" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                </AppIcon>
+                <AppIcon label="Photos" bg="linear-gradient(145deg, #1c1c1e, #2c2c2e)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none">
+                    {[0,60,120,180,240,300].map((a,i) => {
+                      const r = 5.5, cx2 = 12 + r*Math.cos(a*Math.PI/180), cy2 = 12 + r*Math.sin(a*Math.PI/180)
+                      const cols = ['#ff3b30','#ff9500','#ffcc00','#34c759','#007aff','#af52de']
+                      return <ellipse key={i} cx={cx2} cy={cy2} rx="3" ry="5" transform={`rotate(${a} ${cx2} ${cy2})`} fill={cols[i]} opacity="0.9"/>
+                    })}
+                    <circle cx="12" cy="12" r="2.8" fill="white"/>
                   </svg>
-                </button>
-                <span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.02em' }}>Kiosk</span>
+                </AppIcon>
+                <AppIcon label="Messages" bg="linear-gradient(145deg, #34c759, #28a745)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none"><path d="M4 4h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H8l-4 4V5a1 1 0 0 1 1-1z" fill="white"/></svg>
+                </AppIcon>
+
+                {/* Row 2 */}
+                <AppIcon label="Calendar" bg="linear-gradient(145deg, #f94f4f, #e03030)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" fill="white" opacity="0.15" stroke="white" strokeWidth="1.3"/><rect x="3" y="5" width="18" height="5" rx="2" fill="white" opacity="0.3"/><text x="12" y="19" textAnchor="middle" fontSize="8" fontWeight="700" fill="white" fontFamily="Inter,sans-serif">{now.getDate()}</text></svg>
+                </AppIcon>
+                <AppIcon label="Maps" bg="linear-gradient(145deg, #30d158, #25a847)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none"><path d="M12 2C8.7 2 6 4.7 6 8c0 4.5 6 12 6 12s6-7.5 6-12c0-3.3-2.7-6-6-6z" fill="white"/><circle cx="12" cy="8" r="2.2" fill="#30d158"/></svg>
+                </AppIcon>
+                <AppIcon label="Settings" bg="linear-gradient(145deg, #8e8e93, #636366)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="white" strokeWidth="1.6"/><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="white" strokeWidth="1.6" strokeLinecap="round"/></svg>
+                </AppIcon>
+                <AppIcon label="Music" bg="linear-gradient(145deg, #fc3c44, #d92b35)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/><circle cx="6" cy="18" r="3" fill="white"/><circle cx="18" cy="16" r="3" fill="white"/></svg>
+                </AppIcon>
+
+                {/* Row 3 */}
+                <AppIcon label="Camera" bg="linear-gradient(145deg, #2c2c2e, #1c1c1e)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke="white" strokeWidth="1.4"/><circle cx="12" cy="13" r="4" stroke="white" strokeWidth="1.4"/></svg>
+                </AppIcon>
+                <AppIcon label="Notes" bg="linear-gradient(145deg, #ffd60a, #f0c808)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="16" height="18" rx="2" fill="rgba(0,0,0,0.15)"/><line x1="8" y1="8" x2="16" y2="8" stroke="rgba(0,0,0,0.55)" strokeWidth="1.5" strokeLinecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="rgba(0,0,0,0.55)" strokeWidth="1.5" strokeLinecap="round"/><line x1="8" y1="16" x2="13" y2="16" stroke="rgba(0,0,0,0.55)" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                </AppIcon>
+                <AppIcon label="Kiosk" bg="linear-gradient(145deg, #6b1fc2, #a244f5)" onClick={() => setClosedPinActive(true)} glow="rgba(162,68,245,0.5)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.95)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+                </AppIcon>
+                <AppIcon label="Weather" bg="linear-gradient(145deg, #4a90d9, #2d73bb)">
+                  <svg {...s()} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="9" r="4" fill="white"/><path d="M5 19h14M3 15h4a3 3 0 0 1 6 0h8" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                </AppIcon>
+
               </div>
             </div>
-          ) : (
-            /* ── Manager PIN entry ── */
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28 }}>
-              {/* Heading */}
-              <div style={{ textAlign: 'center', userSelect: 'none' }}>
-                <h2 style={{ fontSize: 22, fontWeight: 700, color: 'rgba(255,255,255,0.92)', letterSpacing: '-0.01em', margin: 0 }}>Manager Login</h2>
-                <p style={{ marginTop: 6, fontSize: 15, color: 'rgba(255,255,255,0.4)' }}>Enter your Kiosk ID to reactivate</p>
-              </div>
 
-              {/* PIN boxes */}
-              <div className={closedShaking ? 'pin-shake' : undefined} style={{ display: 'flex', gap: 'var(--pin-gap)' }}>
-                {[0,1,2,3].map(i => (
-                  <div key={i} style={{
-                    width: 'var(--pin-size)', height: 'var(--pin-size)',
-                    borderRadius: 'var(--pin-radius)',
-                    border: `2px solid ${closedDigits.length === i ? 'rgba(162,68,245,0.85)' : closedDigits.length > i ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)'}`,
-                    backgroundColor: 'rgba(255,255,255,0.05)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    transition: 'border-color 0.15s',
-                  }}>
-                    {closedDigits.length > i && (
-                      <div style={{ width: 'var(--pin-dot)', height: 'var(--pin-dot)', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.8)' }} />
-                    )}
+            {/* ── Page dots ── */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 7, paddingBottom: 10, userSelect: 'none', pointerEvents: 'none' }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.85)' }} />
+              <div style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.3)' }} />
+              <div style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.3)' }} />
+            </div>
+
+            {/* ── Dock ── */}
+            <div style={{ margin: '0 clamp(16px, 5vw, 48px) clamp(20px, 4vh, 36px)', backgroundColor: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderRadius: 26, padding: 'clamp(10px, 1.5vh, 16px) clamp(16px, 3vw, 28px)', display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
+              <DockIcon bg="linear-gradient(145deg, #006cdc, #0084ff)">
+                <svg {...s(28,28)} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="white" strokeWidth="1.4"/><path d="M16.2 7.8l-3.5 5.3-5.3 3.1 3.6-5.2 5.2-3.2z" fill="white"/><circle cx="12" cy="12" r="1.2" fill="#0076d6"/></svg>
+              </DockIcon>
+              <DockIcon bg="linear-gradient(145deg, #34c759, #28a745)">
+                <svg {...s(28,28)} viewBox="0 0 24 24" fill="none"><path d="M4 4h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H8l-4 4V5a1 1 0 0 1 1-1z" fill="white"/></svg>
+              </DockIcon>
+              <DockIcon bg="linear-gradient(145deg, #1a7af8, #0f66e0)">
+                <svg {...s(28,28)} viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2" stroke="white" strokeWidth="1.4"/><path d="M3 8l9 6 9-6" stroke="white" strokeWidth="1.4" strokeLinecap="round"/></svg>
+              </DockIcon>
+              <DockIcon bg="linear-gradient(145deg, #2c2c2e, #1c1c1e)">
+                <svg {...s(28,28)} viewBox="0 0 24 24" fill="none"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke="white" strokeWidth="1.4"/><circle cx="12" cy="13" r="4" stroke="white" strokeWidth="1.4"/></svg>
+              </DockIcon>
+            </div>
+
+            {/* ── PIN overlay (slides up when Kiosk icon tapped) ── */}
+            {closedPinActive && (
+              <div style={{
+                position: 'absolute', inset: 0,
+                backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28,
+              }}>
+                {/* App icon + title */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 72, height: 72, borderRadius: 'calc(72px * 0.225)', background: 'linear-gradient(145deg, #6b1fc2, #a244f5)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(162,68,245,0.5)' }}>
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.95)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
                   </div>
-                ))}
-              </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'rgba(255,255,255,0.95)', letterSpacing: '-0.01em' }}>Manager Login</h2>
+                    <p style={{ margin: '4px 0 0', fontSize: 14, color: 'rgba(255,255,255,0.45)' }}>Enter your Kiosk ID to reactivate</p>
+                  </div>
+                </div>
 
-              {closedError && (
-                <p style={{ fontSize: 14, color: '#f87171', textAlign: 'center', marginTop: -12 }}>{closedError}</p>
-              )}
+                {/* PIN boxes */}
+                <div className={closedShaking ? 'pin-shake' : undefined} style={{ display: 'flex', gap: 'var(--pin-gap)' }}>
+                  {[0,1,2,3].map(i => (
+                    <div key={i} style={{
+                      width: 'var(--pin-size)', height: 'var(--pin-size)', borderRadius: 'var(--pin-radius)',
+                      border: `2px solid ${closedDigits.length === i ? 'rgba(162,68,245,0.85)' : closedDigits.length > i ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.12)'}`,
+                      backgroundColor: 'rgba(255,255,255,0.07)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'border-color 0.15s',
+                    }}>
+                      {closedDigits.length > i && <div style={{ width: 'var(--pin-dot)', height: 'var(--pin-dot)', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.82)' }} />}
+                    </div>
+                  ))}
+                </div>
 
-              {/* Keypad */}
-              <div className="keypad-grid" role="group" aria-label="Manager PIN keypad">
-                {['1','2','3','4','5','6','7','8','9'].map(d => (
-                  <button key={d} className="keypad-btn" onClick={() => handleClosedDigit(d)}
-                    style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.88)' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}>{d}</span>
+                {closedError && <p style={{ fontSize: 14, color: '#f87171', marginTop: -16 }}>{closedError}</p>}
+
+                {/* Keypad */}
+                <div className="keypad-grid" role="group" aria-label="Manager PIN keypad">
+                  {['1','2','3','4','5','6','7','8','9'].map(d => (
+                    <button key={d} className="keypad-btn" onClick={() => handleClosedDigit(d)} style={{ backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.9)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}>{d}</span>
+                    </button>
+                  ))}
+                  <button className="keypad-btn" onClick={handleClosedBackspace} disabled={closedDigits.length === 0} style={{ backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.9)', opacity: closedDigits.length === 0 ? 0.3 : 1 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}><BackspaceIcon /></span>
                   </button>
-                ))}
-                <button className="keypad-btn" onClick={handleClosedBackspace} disabled={closedDigits.length === 0}
-                  style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.88)', opacity: closedDigits.length === 0 ? 0.3 : 1 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}><BackspaceIcon /></span>
-                </button>
-                <button className="keypad-btn" onClick={() => handleClosedDigit('0')}
-                  style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.88)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}>0</span>
-                </button>
-                <button className="keypad-btn" onClick={() => { setClosedError(null); setClosedDigits([]) }} disabled={closedDigits.length === 0}
-                  style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.88)', opacity: closedDigits.length === 0 ? 0.3 : 1 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}><X /></span>
+                  <button className="keypad-btn" onClick={() => handleClosedDigit('0')} style={{ backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.9)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}>0</span>
+                  </button>
+                  <button className="keypad-btn" onClick={() => { setClosedError(null); setClosedDigits([]) }} disabled={closedDigits.length === 0} style={{ backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.9)', opacity: closedDigits.length === 0 ? 0.3 : 1 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 'calc(var(--btn-size)*0.25)', height: 'calc(var(--btn-size)*0.25)' }}><X /></span>
+                  </button>
+                </div>
+
+                <button onClick={() => { setClosedPinActive(false); setClosedDigits([]); setClosedError(null) }} style={{ fontSize: 14, color: 'rgba(255,255,255,0.38)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
+                  Cancel
                 </button>
               </div>
-
-              <button
-                onClick={() => { setClosedPinActive(false); setClosedDigits([]); setClosedError(null) }}
-                style={{ fontSize: 14, color: 'rgba(255,255,255,0.35)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', fontFamily: 'Inter, sans-serif' }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── Screensaver ── */}
       {showScreensaver && (
