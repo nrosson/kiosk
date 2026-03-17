@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import {
   Delete, CircleCheck, CircleStop, X,
-  Clock, User, Pencil, Square, Play, Sun, Moon, BedDouble,
+  Clock, User, Pencil, Square, Play, Sun, Moon, BedDouble, ChevronDown,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -18,13 +18,16 @@ interface Employee {
   kioskId: string
   job: string
   roles?: string[]
+  isManager?: boolean
   clockedIn: boolean
   clockInTime: Date | null
   recentEntries?: TimeEntry[]
+  photo?: string
 }
 
-type Screen = 'pin' | 'employee' | 'roleSelect' | 'confirm'
+type Screen = 'pin' | 'employee' | 'roleSelect' | 'confirm' | 'manager'
 type ConfirmType = 'in' | 'out'
+type ManagerTab = 'myTime' | 'employees' | 'kiosk'
 
 interface Toast {
   role: string
@@ -42,6 +45,7 @@ const INITIAL_EMPLOYEES: Employee[] = [
   {
     id: 1, name: 'Alex Johnson', kioskId: '1234', job: 'Barista',
     roles: ['Barista', 'Chef', 'Server', 'Dishwasher'], clockedIn: false, clockInTime: null,
+    photo: 'https://randomuser.me/api/portraits/men/32.jpg',
     recentEntries: [
       { clockIn: daysAgo(0, 7, 0),  clockOut: daysAgo(0, 10, 30), role: 'Barista' },
       { clockIn: daysAgo(0, 11, 0), clockOut: daysAgo(0, 14, 30), role: 'Chef' },
@@ -55,6 +59,12 @@ const INITIAL_EMPLOYEES: Employee[] = [
     ],
   },
   { id: 3, name: 'Jordan Davis', kioskId: '9012', job: 'Host', clockedIn: false, clockInTime: null },
+  {
+    id: 4, name: 'Morgan Lee', kioskId: '0000', job: 'Manager',
+    roles: ['Manager', 'Barista', 'Server', 'Chef'],
+    isManager: true, clockedIn: false, clockInTime: null, recentEntries: [],
+    photo: 'https://randomuser.me/api/portraits/women/68.jpg',
+  },
 ]
 
 const COMPANY_NAME = 'Boston Tea Company'
@@ -208,6 +218,223 @@ function formatEntryDuration(from: Date, to: Date) {
   if (h === 0) return `${m}m`
   if (m === 0) return `${h}h`
   return `${h}h ${m}m`
+}
+
+function dateToTimeInput(date: Date): string {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function applyTimeInput(reference: Date, timeStr: string): Date {
+  const [h, m] = timeStr.split(':').map(Number)
+  const d = new Date(reference)
+  d.setHours(h, m, 0, 0)
+  return d
+}
+
+// ── Avatar ─────────────────────────────────────────────────────────────────────
+
+const AVATAR_PALETTE = ['#3d85c8', '#56967f', '#9333ea', '#f97316', '#ec4899', '#0891b2', '#7c3aed', '#d97706']
+
+function getAvatarColor(name: string) {
+  const hash = name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length]
+}
+
+function getInitials(name: string) {
+  return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
+}
+
+function Avatar({ name, photo, size = 48 }: { name: string; photo?: string; size?: number }) {
+  if (photo) {
+    return (
+      <img src={photo} alt={name} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+    )
+  }
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%', flexShrink: 0,
+      backgroundColor: getAvatarColor(name),
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <span style={{ fontSize: size * 0.33, fontWeight: 700, color: '#ffffff', letterSpacing: '0.03em', lineHeight: 1 }}>
+        {getInitials(name)}
+      </span>
+    </div>
+  )
+}
+
+// ── Entry Edit Modal ───────────────────────────────────────────────────────────
+
+function EntryEditModal({ entry, roles, onSave, onCancel }: {
+  entry: TimeEntry
+  roles: string[]
+  onSave: (updated: TimeEntry) => void
+  onCancel: () => void
+}) {
+  const [clockIn, setClockIn] = useState(dateToTimeInput(entry.clockIn))
+  const [clockOut, setClockOut] = useState(dateToTimeInput(entry.clockOut))
+  const [role, setRole] = useState(entry.role)
+  const titleId = useId()
+  const modalRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { modalRef.current?.focus() }, [])
+
+  const isValid = clockIn < clockOut
+
+  const handleSave = () => {
+    onSave({ clockIn: applyTimeInput(entry.clockIn, clockIn), clockOut: applyTimeInput(entry.clockOut, clockOut), role })
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { onCancel(); return }
+    if (e.key !== 'Tab') return
+    const focusable = modalRef.current?.querySelectorAll<HTMLElement>('button, input, [tabindex]:not([tabindex="-1"])')
+    if (!focusable || focusable.length === 0) return
+    const first = focusable[0], last = focusable[focusable.length - 1]
+    if (e.shiftKey ? document.activeElement === first : document.activeElement === last) {
+      e.preventDefault(); (e.shiftKey ? last : first).focus()
+    }
+  }
+
+  return (
+    <div
+      onPointerDown={onCancel}
+      style={{ position: 'fixed', inset: 0, zIndex: 500, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+    >
+      <div
+        ref={modalRef} role="dialog" aria-modal="true" aria-labelledby={titleId}
+        tabIndex={-1} onPointerDown={e => e.stopPropagation()} onKeyDown={handleKeyDown}
+        style={{ backgroundColor: T.bg, borderRadius: 20, padding: 24, width: '100%', maxWidth: 400, boxShadow: '0 8px 40px rgba(0,0,0,0.18)', display: 'flex', flexDirection: 'column', gap: 16, outline: 'none' }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <p id={titleId} style={{ fontSize: 18, fontWeight: 700, color: T.textPrimary }}>Edit Entry</p>
+          <p style={{ fontSize: 13, color: T.textSubdued }}>{formatEntryDate(entry.clockIn)}</p>
+        </div>
+
+        {/* Time inputs */}
+        <div style={{ backgroundColor: T.white, borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: `1px solid ${T.borderSubdued}`, gap: 12 }}>
+            <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: T.textPrimary }}>Clock In</span>
+            <input type="time" value={clockIn} onChange={e => setClockIn(e.target.value)}
+              style={{ fontSize: 15, fontWeight: 500, color: T.textPrimary, border: 'none', backgroundColor: 'transparent', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', gap: 12 }}>
+            <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: T.textPrimary }}>Clock Out</span>
+            <input type="time" value={clockOut} onChange={e => setClockOut(e.target.value)}
+              style={{ fontSize: 15, fontWeight: 500, color: T.textPrimary, border: 'none', backgroundColor: 'transparent', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
+          </div>
+        </div>
+
+        {/* Role selector */}
+        {roles.length > 1 && (
+          <div style={{ backgroundColor: T.white, borderRadius: 14, overflow: 'hidden' }}>
+            {roles.map(r => {
+              const isSelected = role === r
+              return (
+                <button key={r} onClick={() => setRole(r)} aria-pressed={isSelected}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 16, padding: '14px 16px', border: 'none', borderBottom: `1px solid ${T.borderSubdued}`, backgroundColor: isSelected ? 'var(--t-selected-bg)' : 'transparent', cursor: 'pointer', textAlign: 'left' }}>
+                  <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: T.textPrimary }}>{r}</span>
+                  {isSelected && <CircleCheck size={18} color={T.purple} strokeWidth={2.5} aria-hidden="true" />}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {!isValid && clockIn && clockOut && (
+          <p style={{ fontSize: 13, color: T.error, fontWeight: 500 }}>Clock out must be after clock in.</p>
+        )}
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button onClick={onCancel}
+            style={{ flex: 1, padding: '14px 0', borderRadius: 9999, border: `1px solid ${T.border}`, backgroundColor: T.white, fontSize: 16, fontWeight: 600, color: T.textPrimary, cursor: 'pointer' }}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={!isValid}
+            style={{ flex: 1, padding: '14px 0', borderRadius: 9999, border: 'none', backgroundColor: T.purple, fontSize: 16, fontWeight: 600, color: '#ffffff', cursor: isValid ? 'pointer' : 'not-allowed', opacity: isValid ? 1 : 0.5 }}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Manager Employee Card ───────────────────────────────────────────────────────
+
+function ManagerEmployeeCard({ emp, now, onClockOut, onEditEntry }: {
+  emp: Employee
+  now: Date
+  onClockOut: (empId: number) => void
+  onEditEntry: (empId: number, index: number, updated: TimeEntry) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const entries = visibleEntries(emp.recentEntries ?? [], emp.clockInTime)
+  const hasDetails = entries.length > 0
+
+  return (
+    <div style={{ backgroundColor: T.white, borderRadius: 16, overflow: 'hidden', boxShadow: T.shadow }}>
+      {/* Header row — always visible */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: expanded && hasDetails ? `1px solid ${T.borderSubdued}` : undefined }}>
+        {/* Expand toggle (whole left side) */}
+        <button
+          onClick={() => hasDetails && setExpanded(e => !e)}
+          aria-expanded={expanded}
+          aria-label={`${emp.name}, ${expanded ? 'collapse' : 'expand'} details`}
+          style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12, border: 'none', backgroundColor: 'transparent', cursor: hasDetails ? 'pointer' : 'default', textAlign: 'left', padding: 0 }}
+        >
+          <Avatar name={emp.name} photo={emp.photo} size={40} />
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 16, fontWeight: 700, color: T.textPrimary }}>{emp.name}</p>
+            <p style={{ fontSize: 13, marginTop: 2, color: emp.clockedIn ? T.green : T.textSubdued }}>
+              {emp.clockedIn
+                ? `Clocked in · ${formatElapsed(emp.clockInTime!, now)}${emp.roles && emp.roles.length > 1 ? ` · ${emp.job}` : ''}`
+                : 'Not clocked in'}
+            </p>
+          </div>
+          {hasDetails && (
+            <ChevronDown size={18} color={T.textSubdued} strokeWidth={2}
+              style={{ flexShrink: 0, transition: 'transform 0.2s', transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+          )}
+        </button>
+
+        {emp.clockedIn && (
+          <button onClick={e => { e.stopPropagation(); onClockOut(emp.id) }}
+            style={{ padding: '8px 16px', borderRadius: 9999, border: `1px solid ${T.border}`, backgroundColor: T.white, color: T.orange, fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
+            Clock Out
+          </button>
+        )}
+      </div>
+
+      {/* Expandable entries */}
+      {expanded && entries.map((entry, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < entries.length - 1 ? `1px solid ${T.borderSubdued}` : undefined }}>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 12, fontWeight: 500, color: T.textSubdued, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{formatEntryDate(entry.clockIn)}</p>
+            <p style={{ fontSize: 15, fontWeight: 600, color: T.textSubdued, marginTop: 1 }}>
+              {formatTimeShort(entry.clockIn)} – {formatTimeShort(entry.clockOut)}
+              <span style={{ fontSize: 13, fontWeight: 500, marginLeft: 8 }}>{formatEntryDuration(entry.clockIn, entry.clockOut)}</span>
+            </p>
+            <p style={{ fontSize: 13, color: T.textSubdued, marginTop: 1 }}>{entry.role}</p>
+          </div>
+          <button onClick={() => setEditingIndex(i)} aria-label={`Edit entry for ${emp.name}`}
+            style={{ width: 36, height: 36, borderRadius: '50%', border: `1px solid ${T.border}`, backgroundColor: T.white, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+            <Pencil size={15} color={T.textSubdued} strokeWidth={1.5} />
+          </button>
+        </div>
+      ))}
+
+      {editingIndex !== null && (
+        <EntryEditModal
+          entry={entries[editingIndex]}
+          roles={emp.roles ?? [emp.job]}
+          onSave={updated => { onEditEntry(emp.id, editingIndex, updated); setEditingIndex(null) }}
+          onCancel={() => setEditingIndex(null)}
+        />
+      )}
+    </div>
+  )
 }
 
 // ── Recent Activity ────────────────────────────────────────────────────────────
@@ -437,7 +664,7 @@ function KeypadBtn({
 export default function App() {
   const [screen, setScreen] = useState<Screen>('pin')
   const [digits, setDigits] = useState<string[]>([])
-  const [error, setError] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [shaking, setShaking] = useState(false)
   const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES)
   const [employee, setEmployee] = useState<Employee | null>(null)
@@ -455,6 +682,8 @@ export default function App() {
   const [roleModalPending, setRoleModalPending] = useState<string | null>(null)
   const roleModalRef = useRef<HTMLDivElement>(null)
   const roleModalTitleId = useId()
+  const [kioskOpen, setKioskOpen] = useState(true)
+  const [managerTab, setManagerTab] = useState<ManagerTab>('myTime')
   const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -490,9 +719,9 @@ export default function App() {
     }
   }
 
-  // Reset screensaver timer on any pin screen activity
+  // Reset screensaver timer on any pin/manager screen activity
   useEffect(() => {
-    if (screen !== 'pin') {
+    if (screen !== 'pin' && screen !== 'manager') {
       setShowScreensaver(false)
       if (screensaverTimerRef.current) clearTimeout(screensaverTimerRef.current)
       return
@@ -500,7 +729,7 @@ export default function App() {
     if (screensaverTimerRef.current) clearTimeout(screensaverTimerRef.current)
     screensaverTimerRef.current = setTimeout(() => setShowScreensaver(true), 30_000)
     return () => { if (screensaverTimerRef.current) clearTimeout(screensaverTimerRef.current) }
-  }, [screen, digits, error])
+  }, [screen, digits, errorMsg])
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000)
@@ -510,10 +739,11 @@ export default function App() {
   const resetToPin = useCallback(() => {
     setScreen('pin')
     setDigits([])
-    setError(false)
+    setErrorMsg(null)
     setEmployee(null)
     setSelectedRole(null)
     setConfirmType(null)
+    setManagerTab('myTime')
     if (employeeTimerRef.current) clearInterval(employeeTimerRef.current)
     if (confirmTimerRef.current) clearInterval(confirmTimerRef.current)
   }, [])
@@ -533,19 +763,24 @@ export default function App() {
 
   useEffect(() => {
     if (screen !== 'confirm') return
+    const isManagerSession = employee?.isManager ?? false
     setConfirmCountdown(CONFIRM_SECONDS)
     const id = setInterval(() => {
       setConfirmCountdown(prev => {
-        if (prev <= 1) { resetToPin(); return 0 }
+        if (prev <= 1) {
+          if (isManagerSession) { setScreen('manager'); return 0 }
+          resetToPin()
+          return 0
+        }
         return prev - 1
       })
     }, 1000)
     confirmTimerRef.current = id
     return () => clearInterval(id)
-  }, [screen, resetToPin])
+  }, [screen, resetToPin, employee])
 
   const handleDigit = useCallback((d: string) => {
-    setError(false)
+    setErrorMsg(null)
     setDigits(prev => {
       if (prev.length >= PIN_LENGTH) return prev
       return [...prev, d]
@@ -553,7 +788,7 @@ export default function App() {
   }, [])
 
   const handleBackspace = useCallback(() => {
-    setError(false)
+    setErrorMsg(null)
     setDigits(prev => prev.slice(0, -1))
   }, [])
 
@@ -561,22 +796,29 @@ export default function App() {
     const pin = digits.join('')
     const found = employees.find(e => e.kioskId === pin)
     if (!found) {
-      setError(true)
+      setErrorMsg('Invalid Kiosk ID. Please try again.')
       setShaking(true)
-      setTimeout(() => {
-        setShaking(false)
-        setDigits([])
-      }, 400)
+      setTimeout(() => { setShaking(false); setDigits([]) }, 400)
+      return
+    }
+    if (!kioskOpen && !found.isManager) {
+      setErrorMsg('Kiosk is currently closed.')
+      setShaking(true)
+      setTimeout(() => { setShaking(false); setDigits([]) }, 400)
       return
     }
     setEmployee(found)
+    if (found.isManager) {
+      setScreen('manager')
+      return
+    }
     if (!found.clockedIn && found.roles && found.roles.length > 1) {
       setSelectedRole(found.roles[0])
       setScreen('roleSelect')
     } else {
       setScreen('employee')
     }
-  }, [digits, employees])
+  }, [digits, employees, kioskOpen])
 
   // Auto-submit when PIN is complete
   useEffect(() => {
@@ -647,6 +889,22 @@ export default function App() {
     }, 3000)
   }, [employee])
 
+  const handleManagerClockOut = useCallback((empId: number) => {
+    setEmployees(prev => prev.map(e => {
+      if (e.id !== empId || !e.clockedIn || !e.clockInTime) return e
+      const clockOutTime = new Date()
+      const newEntry: TimeEntry = { clockIn: e.clockInTime, clockOut: clockOutTime, role: e.job }
+      return { ...e, clockedIn: false, clockInTime: null, recentEntries: [...(e.recentEntries ?? []), newEntry] }
+    }))
+  }, [])
+
+  const handleManagerEditEntry = useCallback((empId: number, index: number, updated: TimeEntry) => {
+    setEmployees(prev => prev.map(e => {
+      if (e.id !== empId || !e.recentEntries) return e
+      return { ...e, recentEntries: e.recentEntries.map((en, i) => i === index ? updated : en) }
+    }))
+  }, [])
+
   // Shared pill button style helper
   const pillBtn = (bg: string, color: string, border?: string): React.CSSProperties => ({
     width: '100%',
@@ -703,7 +961,7 @@ export default function App() {
       </header>
 
       {/* ── Main ── */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: `16px 16px ${screen === 'employee' || screen === 'roleSelect' ? '160px' : '80px'}` }}>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: screen === 'manager' ? 'flex-start' : 'center', padding: `${screen === 'manager' ? '32px' : '16px'} 16px ${screen === 'employee' || screen === 'roleSelect' ? '160px' : screen === 'manager' ? '100px' : '80px'}` }}>
 
         {/* ── PIN Entry ── */}
         {wakingUp && (
@@ -718,11 +976,14 @@ export default function App() {
                 tabIndex={-1}
                 style={{ fontSize: 'var(--greeting-font)', fontWeight: 700, color: T.textPrimary, textAlign: 'center', lineHeight: 1.1, outline: 'none' }}
               >
-                {getGreeting(now)}
+                {kioskOpen ? getGreeting(now) : 'Kiosk Closed'}
               </h1>
               <p style={{ fontSize: 'var(--body-font)', color: T.textSecondary, textAlign: 'center', lineHeight: 1.4 }}>
-                Enter your Kiosk ID to continue
+                {kioskOpen ? 'Enter your Kiosk ID to continue' : 'This kiosk is not currently accepting clock-ins.'}
               </p>
+              {!kioskOpen && (
+                <p style={{ fontSize: 13, color: T.textSubdued, textAlign: 'center' }}>Managers may still sign in.</p>
+              )}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
@@ -732,25 +993,21 @@ export default function App() {
                 aria-atomic="true"
                 style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap' }}
               >
-                {error
-                  ? 'Invalid Kiosk ID. Please try again.'
-                  : digits.length === 0
-                    ? 'Kiosk ID entry. No digits entered.'
-                    : `${digits.length} of ${PIN_LENGTH} digits entered.`}
+                {errorMsg ?? (digits.length === 0 ? 'Kiosk ID entry. No digits entered.' : `${digits.length} of ${PIN_LENGTH} digits entered.`)}
               </div>
               <div className={`pin-row${shaking ? ' pin-shake' : ''}`} aria-hidden="true">
                 {Array.from({ length: PIN_LENGTH }).map((_, i) => (
                   <div key={i} className="pin-box" style={{
-                    border: `2px solid ${error ? T.error : i < digits.length ? T.purple : T.border}`,
+                    border: `2px solid ${errorMsg ? T.error : i < digits.length ? T.purple : T.border}`,
                     backgroundColor: T.white, boxShadow: T.shadow,
                   }}>
                     {i < digits.length && <div className="pin-dot" style={{ backgroundColor: T.textPrimary }} />}
                   </div>
                 ))}
               </div>
-              {error && (
+              {errorMsg && (
                 <p role="alert" style={{ fontSize: 14, color: T.error, fontWeight: 500 }}>
-                  Invalid Kiosk ID. Please try again.
+                  {errorMsg}
                 </p>
               )}
             </div>
@@ -761,11 +1018,11 @@ export default function App() {
               ))}
               <KeypadBtn onClick={handleBackspace} disabled={digits.length === 0} ariaLabel="Delete last digit"><BackspaceIcon /></KeypadBtn>
               <KeypadBtn onClick={() => handleDigit('0')}>0</KeypadBtn>
-              <KeypadBtn onClick={() => { setError(false); setDigits([]) }} disabled={digits.length === 0} ariaLabel="Clear PIN"><X style={{ width: '100%', height: '100%' }} /></KeypadBtn>
+              <KeypadBtn onClick={() => { setErrorMsg(null); setDigits([]) }} disabled={digits.length === 0} ariaLabel="Clear PIN"><X style={{ width: '100%', height: '100%' }} /></KeypadBtn>
             </div>
 
             <p style={{ fontSize: 13, color: T.textSecondary, opacity: 0.6, textAlign: 'center' }}>
-              Demo Kiosk IDs: 1234 · 5678 · 9012
+              Demo Kiosk IDs: 1234 · 5678 · 9012 · 0000 (manager)
             </p>
           </div>
         )}
@@ -773,7 +1030,8 @@ export default function App() {
         {/* ── Role Select ── */}
         {screen === 'roleSelect' && employee && employee.roles && (
           <div className="kiosk-container">
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, width: '100%' }}>
+              <Avatar name={employee.name} photo={employee.photo} size={64} />
               <h1 ref={screenHeadingRef} tabIndex={-1} style={{ fontSize: 'var(--greeting-font)', fontWeight: 700, color: T.textPrimary, textAlign: 'center', outline: 'none' }}>
                 {employee.name}
               </h1>
@@ -831,7 +1089,8 @@ export default function App() {
               style={!ve.length ? { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--screen-gap)', width: '100%' } : undefined}
             >
               {/* Name + status */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: '100%' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, width: '100%' }}>
+                <Avatar name={employee.name} photo={employee.photo} size={72} />
                 <h1 ref={screenHeadingRef} tabIndex={-1} style={{ fontSize: 30, fontWeight: 700, color: T.textPrimary, textAlign: 'center', letterSpacing: '0.01em', outline: 'none' }}>
                   {employee.name}
                 </h1>
@@ -926,6 +1185,143 @@ export default function App() {
           )
         })()}
 
+        {/* ── Manager Screen ── */}
+        {screen === 'manager' && employee && (
+          <div className="kiosk-container">
+            {/* Name + title */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <Avatar name={employee.name} photo={employee.photo} size={72} />
+              <h1 ref={screenHeadingRef} tabIndex={-1} style={{ fontSize: 30, fontWeight: 700, color: T.textPrimary, textAlign: 'center', outline: 'none' }}>
+                {employee.name}
+              </h1>
+              <p style={{ fontSize: 'var(--body-font)', color: T.textSubdued }}>Manager</p>
+            </div>
+
+            {/* Tab bar */}
+            <div style={{ display: 'flex', backgroundColor: T.white, borderRadius: 12, padding: 4, width: '100%', border: `1px solid ${T.border}`, gap: 4 }}>
+              {(['myTime', 'employees', 'kiosk'] as ManagerTab[]).map(tab => (
+                <button key={tab} onClick={() => setManagerTab(tab)}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 9, border: 'none', backgroundColor: managerTab === tab ? T.purple : 'transparent', color: managerTab === tab ? '#ffffff' : T.textSubdued, fontSize: 14, fontWeight: 600, cursor: 'pointer', transition: 'background-color 0.12s' }}>
+                  {tab === 'myTime' ? 'My Time' : tab === 'employees' ? 'Employees' : 'Kiosk'}
+                </button>
+              ))}
+            </div>
+
+            {/* ── My Time tab ── */}
+            {managerTab === 'myTime' && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--screen-gap)', width: '100%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: '100%' }}>
+                  {employee.clockedIn ? (
+                    <p style={{ fontSize: 'var(--body-font)', color: T.green }}>You're clocked in!</p>
+                  ) : (
+                    <p style={{ fontSize: 'var(--body-font)', color: T.textSecondary }}>You're not clocked in yet.</p>
+                  )}
+                </div>
+                {employee.clockedIn ? (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 'clamp(40px, 8vw, 60px)', fontWeight: 700, color: T.green, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+                        {employee.clockInTime ? formatElapsed(employee.clockInTime, now) : '00:00:00'}
+                      </span>
+                      <span style={{ fontSize: 16, color: T.textPrimary }}>Time on Shift</span>
+                    </div>
+                    <div style={{ backgroundColor: T.white, borderRadius: 16, width: '100%', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 12px', borderBottom: `1px solid ${T.borderSubdued}` }}>
+                        <ClockIcon />
+                        <span style={{ fontSize: 16, fontWeight: 600, color: T.textSubdued }}>
+                          Clocked in @ {employee.clockInTime ? formatTimeShort(employee.clockInTime) : ''}
+                        </span>
+                      </div>
+                      {employee.roles && employee.roles.length > 1 && (
+                        <button onClick={handleEditRole}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 16, padding: '14px 12px', border: 'none', backgroundColor: 'transparent', cursor: 'pointer', textAlign: 'left' }}>
+                          <RoleIcon />
+                          <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: T.textPrimary }}>Role</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 15, fontWeight: 500, color: T.textPrimary }}>{employee.job}</span>
+                            <EditIcon />
+                          </div>
+                        </button>
+                      )}
+                    </div>
+                    <button onClick={handleClockOut} style={{ ...pillBtn(T.orange, T.white), width: '100%' }}>
+                      <StopIcon /> Clock Out
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ backgroundColor: T.white, borderRadius: 16, padding: 'clamp(16px, 3vw, 24px) clamp(20px, 4vw, 32px)', width: '100%', boxShadow: T.shadow, border: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, textAlign: 'center' }}>
+                      <p style={{ fontSize: 13, color: T.textSecondary, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Current time</p>
+                      <p style={{ fontSize: 'clamp(20px, 3.5vw, 26px)', fontWeight: 700, color: T.textPrimary }}>{formatTime(now)}</p>
+                    </div>
+                    <button onClick={() => {
+                      if (!employee.clockedIn && employee.roles && employee.roles.length > 1) {
+                        setSelectedRole(employee.roles[0]); setScreen('roleSelect')
+                      } else { handleClockIn() }
+                    }} style={{ ...pillBtn(T.purple, T.white), width: '100%' }}>
+                      <PlayIcon /> Clock In
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── Employees tab ── */}
+            {managerTab === 'employees' && (() => {
+              const staff = employees.filter(e => !e.isManager)
+                .slice()
+                .sort((a, b) => {
+                  if (a.clockedIn !== b.clockedIn) return a.clockedIn ? -1 : 1
+                  return a.name.localeCompare(b.name)
+                })
+              const clockedInCount = staff.filter(e => e.clockedIn).length
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+                  {/* Summary bar */}
+                  <div style={{ display: 'flex', gap: 16, padding: '12px 16px', backgroundColor: T.white, borderRadius: 12, boxShadow: T.shadow }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: T.green }} />
+                      <span style={{ fontSize: 14, fontWeight: 600, color: T.textPrimary }}>{clockedInCount} clocked in</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: T.border }} />
+                      <span style={{ fontSize: 14, fontWeight: 600, color: T.textSubdued }}>{staff.length - clockedInCount} not clocked in</span>
+                    </div>
+                  </div>
+                  {staff.map(emp => (
+                    <ManagerEmployeeCard
+                      key={emp.id}
+                      emp={emp}
+                      now={now}
+                      onClockOut={handleManagerClockOut}
+                      onEditEntry={handleManagerEditEntry}
+                    />
+                  ))}
+                </div>
+              )
+            })()}
+
+            {/* ── Kiosk tab ── */}
+            {managerTab === 'kiosk' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%' }}>
+                <div style={{ backgroundColor: T.white, borderRadius: 16, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, boxShadow: T.shadow }}>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: kioskOpen ? T.green : T.error, flexShrink: 0 }} />
+                  <div>
+                    <p style={{ fontSize: 16, fontWeight: 600, color: T.textPrimary }}>{kioskOpen ? 'Kiosk is Open' : 'Kiosk is Closed'}</p>
+                    <p style={{ fontSize: 13, color: T.textSubdued, marginTop: 2 }}>{kioskOpen ? 'Accepting employee clock-ins' : 'Employees cannot clock in'}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { if (kioskOpen) { setKioskOpen(false); resetToPin() } else { setKioskOpen(true) } }}
+                  style={pillBtn(kioskOpen ? T.orange : T.green, T.white)}
+                >
+                  {kioskOpen ? 'Close Kiosk' : 'Open Kiosk'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Confirmation ── */}
         {screen === 'confirm' && employee && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, width: 'var(--panel-w)', textAlign: 'center' }}>
@@ -988,6 +1384,22 @@ export default function App() {
                 transition: 'width 1s linear',
               }} />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Manager bottom bar ── */}
+      {screen === 'manager' && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          padding: '16px 24px 32px', backgroundColor: 'var(--t-bar-bg)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+          borderTop: `1px solid ${T.border}`,
+        }}>
+          <div style={{ width: '100%', maxWidth: 'var(--container-w)' }}>
+            <button onClick={resetToPin} style={pillBtn(T.white, T.textPrimary, `1px solid ${T.border}`)}>
+              Return to PIN Screen
+            </button>
           </div>
         </div>
       )}

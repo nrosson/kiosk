@@ -23,6 +23,19 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+input[type="time"] {
+  font-family: 'Inter', sans-serif;
+  color: var(--t-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+input[type="time"]::-webkit-calendar-picker-indicator {
+  opacity: 0.5;
+  cursor: pointer;
+}
+
 svg {
   -webkit-tap-highlight-color: transparent;
 }
